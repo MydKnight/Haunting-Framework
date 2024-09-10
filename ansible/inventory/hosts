@@ -1,0 +1,6 @@
+[raspberrypis]
+192.168.68.111
+
+[raspberrypis:vars]
+ansible_user=raspberry 
+ansible_ssh_private_key_file=/root/.ssh/id_rsa
