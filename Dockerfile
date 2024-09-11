@@ -17,6 +17,7 @@ RUN pip install --no-cache-dir ansible
 # Copy the ansible directory contents into the container
 COPY ./ansible /ansible
 COPY .ssh /root/.ssh
+COPY requirements-gags.txt /tmp/requirements.txt
 RUN chmod 600 /root/.ssh/id_rsa
 
 # Set environment variables

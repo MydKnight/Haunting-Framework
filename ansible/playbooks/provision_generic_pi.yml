@@ -1,0 +1,60 @@
+- name: Provision Raspberry Pi for Gags
+  hosts: raspberrypis
+  become: yes  # Use 'sudo' for privileged operations
+  
+  vars:
+    python_packages:
+      - flask
+      - requests
+      - numpy
+      - pandas
+
+  tasks:
+    - name: Update package lists
+      apt:
+        update_cache: yes
+    - name: Upgrade all packages
+      apt:
+        upgrade: yes
+    - name: Install Node.js and npm
+      apt:
+        name: 
+          - nodejs
+          - npm
+          
+    - name: Install Node-RED
+      npm:
+        name: node-red
+        global: yes
+
+    - name: Install Python dependencies
+      pip:
+        name: "{{ python_packages }}"
+        virtualenv: /opt/gags-venv
+        virtualenv_command: python3 -m venv
+      register: pip_result
+
+    - name: Create Node-RED service file
+      copy:
+        content: |
+          [Unit]
+          Description=Node-RED graphical event wiring tool
+          After=network.target
+
+          [Service]
+          Type=simple
+          User=raspberry 
+          ExecStart=/usr/local/bin/node-red 
+          Restart=on-failure
+
+          [Install]
+          WantedBy=multi-user.target
+        dest: /lib/systemd/system/node-red.service
+      become: yes
+
+    - name: Enable and start Node-RED service
+      systemd:
+        name: node-red.service
+        enabled: yes
+        state: started
+        daemon_reload: yes
