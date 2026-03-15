@@ -1,6 +1,6 @@
 # Haunting-Framework
 
-Ansible-based Raspberry Pi fleet management framework for a Magic Castle interactive Halloween experience. The canonical repo for all Pi haunt work — past, present, and future.
+Raspberry Pi haunt framework — the canonical reference for 6 years of interactive event builds (2015–2021) at the Magic Castle. Gens 1–3 delivered working gags via Python + Balena. Gen 4 (this repo) pivots to Ansible + Docker + Node-Red as the successor framework — scaffolded but not yet brought to delivery.
 
 ---
 
@@ -12,7 +12,7 @@ If you're picking this project up again, **start here before writing any code.**
 
 ## Current Status
 
-**Dormant** — last commit Sep 2024. Framework layer is functional: Ansible provisioning works, Node-Red is wired. No gag-level Python scripts have been ported yet. The haunt has not run on this version.
+**Dormant** — last commit Sep 2024. The prior history (Gens 1–3, 2015–2021) is the delivered work — fully archived. Gen 4 (this repo) is the successor framework: Ansible provisioning scaffolded, Node-Red wired up, but **no gag scripts ported, no hardware abstraction layer, haunt has never run on this version.**
 
 **Known gaps:**
 - No hardware abstraction layer (GPIO, DMX, RFID, audio) — prior implementations exist in archived repos, need porting to Python 3
@@ -22,6 +22,7 @@ If you're picking this project up again, **start here before writing any code.**
 - No telemetry/error tracking
 - No process watchdog
 - No tests
+- No CLAUDE.md — write this before starting any revival work
 
 **Revive decision:** ~Aug 2026 (seasonal — only relevant pre-Halloween)
 
@@ -284,17 +285,18 @@ When the time comes to revive this, work in this order. Do not jump to gag scrip
 
 | Step | What to build | Why first |
 |---|---|---|
-| 1 | Verify Ansible fleet still works — reprovision a Pi | Everything else runs on the fleet |
-| 2 | Python 3 hardware modules: GPIO, DMX, RFID (UART), audio | Every gag needs these — port from archived repos |
-| 3 | Inter-Pi messaging module (UDP send/receive) | Multi-Pi gags need this; build once |
-| 4 | Process watchdog | Gags will crash; need auto-restart before going to event |
-| 5 | Sentry integration | Remote crash visibility |
-| 6 | Gag template | Starting point for each new gag |
-| 7 | Node-Red flows | Choreography layer wired to gag triggers |
-| 8 | First gag end-to-end | Validate the stack works before building more |
-| 9 | Member system (optional) | Only if personalized experiences are wanted |
-| 10 | Photo booth module (optional) | Only if camera gag is planned — use self-hosted output, not Twitter |
-| 11 | Thermal printer (optional) | Reference `Inferno2.0/PrinterTester` — CUPS + ZJ-58/ZJ-80 + Docker |
+| 1 | Write CLAUDE.md for this repo | Captures architecture decisions before writing any code |
+| 2 | Verify Ansible fleet still works — reprovision a Pi | Everything else runs on the fleet |
+| 3 | Python 3 hardware modules: GPIO, DMX, RFID (UART), audio | Every gag needs these — port from archived repos |
+| 4 | Inter-Pi messaging module (UDP send/receive) | Multi-Pi gags need this; build once |
+| 5 | Process watchdog | Gags will crash; need auto-restart before going to event |
+| 6 | Sentry integration | Remote crash visibility |
+| 7 | Gag template | Starting point for each new gag |
+| 8 | Node-Red flows | Choreography layer wired to gag triggers |
+| 9 | First gag end-to-end | Validate the stack works before building more |
+| 10 | Member system (optional) | Only if personalized experiences are wanted |
+| 11 | Photo booth module (optional) | Only if camera gag is planned — use self-hosted output, not Twitter |
+| 12 | Thermal printer (optional) | Reference `Inferno2.0/PrinterTester` — CUPS + ZJ-58/ZJ-80 + Docker |
 
 ---
 
