@@ -1,6 +1,12 @@
 # Haunting-Framework
 
-Ansible-based Raspberry Pi fleet management framework for a Magic Castle interactive Halloween experience. The canonical active repo for all Pi haunt work going forward.
+Ansible-based Raspberry Pi fleet management framework for a Magic Castle interactive Halloween experience. The canonical repo for all Pi haunt work — past, present, and future.
+
+---
+
+## How to Use This Document
+
+If you're picking this project up again, **start here before writing any code.** This README is the accumulated memory of 6 years of building interactive gags. It documents every capability ever built, what worked, what didn't, what was never finished, and the architecture lessons learned the hard way. The goal for any future revival is to build the framework layers first so that individual gags become easy to assemble — not to dive straight into a specific gag and reinvent the wheel again.
 
 ---
 
@@ -9,10 +15,12 @@ Ansible-based Raspberry Pi fleet management framework for a Magic Castle interac
 **Dormant** — last commit Sep 2024. Framework layer is functional: Ansible provisioning works, Node-Red is wired. No gag-level Python scripts have been ported yet. The haunt has not run on this version.
 
 **Known gaps:**
-- No hardware abstraction layer (GPIO, DMX, RFID, audio) — exists in `PiClasses` (Gen 2), needs porting to Python 3
-- No gag scripts — most complete versions exist in `Inferno2.0` (Gen 3)
-- No member lookup system — backend exists in `Castle-Backend` (Gen 3, Node.js/Express/MySQL)
-- No telemetry/error tracking — Sentry integration existed in Gen 3
+- No hardware abstraction layer (GPIO, DMX, RFID, audio) — prior implementations exist in archived repos, need porting to Python 3
+- No gag scripts
+- No inter-Pi messaging abstraction
+- No member lookup system
+- No telemetry/error tracking
+- No process watchdog
 - No tests
 
 **Revive decision:** ~Aug 2026 (seasonal — only relevant pre-Halloween)
@@ -21,14 +29,14 @@ Ansible-based Raspberry Pi fleet management framework for a Magic Castle interac
 
 ## What It Does
 
-This framework manages a fleet of Raspberry Pis that drive interactive gags for a Halloween event at the Magic Castle. Pis control physical hardware (DMX lighting rigs, RFID readers, GPIO relays, audio) and coordinate with each other to trigger multi-step experiences when a guest interacts with a prop.
+A fleet of Raspberry Pis drives interactive prop gags for a Halloween event at the Magic Castle. Each Pi controls physical hardware (DMX lighting rigs, RFID readers, GPIO relays, audio) and coordinates with other Pis to trigger multi-step experiences when a guest interacts with a prop.
 
-The framework handles:
+This repo manages:
 - **Fleet management** — provisioning, SSH deployment, remote management of all Pis
 - **Event choreography** — Node-Red flows that sequence hardware triggers in time
 - **Gag scripts** — per-gag Python scripts that read sensors and drive outputs
-- **Member system** (Gen 3 capability) — RFID-triggered member lookup, personalized responses
-- **Telemetry** (Gen 3 capability) — remote error tracking via Sentry
+- **Member system** (Gen 3 capability, not yet ported) — RFID badge → member name lookup → personalized responses
+- **Telemetry** (Gen 3 capability, not yet ported) — remote crash tracking via Sentry
 
 ---
 
@@ -36,137 +44,318 @@ The framework handles:
 
 | Layer | Technology | Notes |
 |---|---|---|
-| Fleet management | Ansible + Docker | Replaced Balena (see below) |
+| Fleet management | Ansible + Docker | Replaced Balena — see note below |
 | Event choreography | Node-Red | Visual flow editor, wired in Gen 4 |
 | Gag scripts | Python 3.9 | Pi-side logic |
 | Pi provisioning | Ansible playbooks | SSH-based, inventory in `ansible/inventory/hosts` |
-| Container runtime | Docker | Ansible runs inside a container |
+| Container runtime | Docker | Ansible runs inside a container — no host-side install needed |
+| Video looping | info-beamer-pi | UDP control on `localhost:4444` |
 | Error tracking | Sentry SDK | Gen 3 capability — not yet in Gen 4 |
 | Backend API | Node.js / Express / MySQL | Gen 3 capability — lives in archived `Castle-Backend` |
 
-### A note on Balena
+### Fleet Management: Why Ansible Replaced Balena
 
-Generations 2 and 3 used **Balena** (formerly resin.io) for fleet management. Balena provided an excellent dashboard for remote shell access, remote shutdown/restart, and OTA code pushes via `Dockerfile.template`. It has since transitioned to a paid service that is outside the budget for a private project. **Balena should not be assumed going forward.** Ansible replaces it in Gen 4.
+Prior generations (2018, 2021) used **Balena** (formerly resin.io) for fleet management. Balena was excellent — dashboard for remote shell access, OTA code pushes via `Dockerfile.template`, remote shutdown/restart. However, Balena has since moved to a paid service model that's out of budget for a personal project.
 
----
+**Ansible + Docker replaces everything Balena provided:**
+- OTA deploys → `ansible-playbook` push
+- Remote shell → `ansible` ad-hoc commands or direct SSH
+- Pi provisioning → Ansible playbooks
+- All self-hosted, no ongoing cost
 
-## Generational History
-
-This repo is Gen 4. Three prior generations exist across archived repos — their capabilities are documented below so nothing is lost.
-
-### Gen 1 — 2015 (Halloween2015, Christmas-2015, NYE2015)
-
-Flat Python 2 scripts, one file per gag. No framework, no fleet management, manual deployment.
-
-**Capabilities:**
-- RFID triggering via USB HID (keyboard emulation, `raw_input` loop)
-- DMX lighting control via USB-RS485 serial adapter
-- GPIO relay control (solenoids, props)
-- Audio playback via `mpg321`
-- Per-event iterations: Halloween, Christmas, NYE — each in its own repo
-
-**Gaps vs. later gens:** No reusable library, no fleet management, no telemetry, no coordination between Pis, no member system.
+Do not reintroduce Balena. The `Dockerfile.template` files visible in archived repos are Balena artifacts — they are not standard Docker files.
 
 ---
 
-### Gen 2 — 2018 (PiClasses)
+## The Framework-First Principle
 
-Introduced a shared Python 2 class library. Still Balena for fleet management.
+Every prior year, gags were built as standalone scripts that reimplemented the same plumbing from scratch: RFID reading, DMX control, GPIO handling, inter-Pi messaging. The result was working gags but no reusable foundation. Each year started from near-zero.
 
-**Capabilities (via reusable classes):**
-- `BaseScript.py` — base class for all gag scripts
-- `GPIOLib.py` — GPIO abstraction (relays, inputs)
-- `DmxPy.py` — DMX lighting control (USB-RS485)
-- `Movies.py` / `InfoBeamer.py` — video looping via info-beamer-pi (UDP control on `localhost:4444`)
-- `WriteLogToDB.py` — telemetry pipeline: writes gag events to a database
-- Balena fleet management (OTA push via `Dockerfile.template`)
+**The right approach for any future revival:**
 
-**Gaps vs. later gens:** Python 2, no UART RFID, no inter-Pi UDP messaging, no member system, no TTS.
+1. Build the hardware abstraction layer (GPIO, DMX, RFID, audio) as importable Python 3 modules — test them on the bench before touching a gag
+2. Build the inter-Pi messaging abstraction — a clean send/receive pattern usable by any gag
+3. Build the process watchdog — gags need to auto-restart without intervention
+4. Wire Node-Red for choreography
+5. *Then* write gag scripts that import from the above
 
----
-
-### Gen 3 — 2021 (Inferno2.0 + Castle-Backend)
-
-Most feature-complete generation. Two repos working in tandem: Pi-side Python (`Inferno2.0`) and cloud backend (`Castle-Backend`).
-
-**Pi-side capabilities (Inferno2.0):**
-- RFID reading via hardware UART serial (more reliable than USB HID)
-- Member lookup — RFID badge → REST API call → member name/data
-- Text-to-speech via `pyTTS` / `espeak` — personalized audio responses
-- UDP broadcast for coordinated multi-Pi gag sequencing
-- BCD GPIO output (binary-coded decimal hardware addressing)
-- Threaded architecture (RFID reader on background thread, main loop non-blocking)
-- Sentry SDK for remote error tracking and crash reporting
-- Balena fleet management
-
-**Backend capabilities (Castle-Backend):**
-- Node.js / Express REST API
-- `GET /members/:badge_id` — RFID badge lookup → returns member record
-- `POST /activation` — logs gag activation events
-- MySQL database
-- Deployed to AWS Elastic Beanstalk
-- Sentry integration
-
-**Gaps vs. Gen 4:** Balena dependency (paid), no Ansible/Docker self-hosted management, no Node-Red choreography layer.
+A gag script built on a solid framework should be ~50-100 lines. A gag script that contains its own RFID reader, DMX driver, and UDP socket from scratch will be 400+ lines and impossible to maintain.
 
 ---
 
-### Gen 4 — 2024 (Haunting-Framework — this repo)
+## Complete Event History
 
-**Capabilities:**
-- Ansible provisioning of Pi fleet (SSH-based, inventory-driven)
-- Ansible runs in Docker container — no host-side Ansible install needed
-- Node-Red wired for event choreography
-- Python 3.9 target
-- Self-hosted — no paid services required
-
-**Not yet implemented (see roadmap below):**
-- Hardware abstraction layer (GPIO, DMX, RFID, audio)
-- Gag scripts
-- Member system
-- Telemetry
+Six events were built across 9 years. Each year's code lives in the archived repos listed at the bottom of this document. **The 2019 code is missing from version control** — see note under that year.
 
 ---
 
-## Capability Roadmap
+### 2015 — Sleepy Hollow (`Halloween2015`, master branch)
 
-Organized by layer. Each layer depends on the one below it. Goal state for a fully operational haunt:
+Flat Python 2 scripts, one per gag. No shared library, no fleet management, manual deploy. The first year everything worked end to end.
 
-| Layer | Capability | Status | Source to port from |
+**Gags:**
+| Gag | Trigger | Hardware | Notes |
 |---|---|---|---|
-| 0 — Fleet | Ansible provisioning + SSH management | ✓ Done | — |
-| 0 — Fleet | Node-Red choreography | ✓ Wired | — |
-| 1 — Hardware | GPIO abstraction (relays, inputs) | ✗ Not started | `PiClasses/GPIOLib.py` |
-| 1 — Hardware | DMX lighting (USB-RS485) | ✗ Not started | `PiClasses/DmxPy.py` |
-| 1 — Hardware | RFID reading (hardware UART preferred) | ✗ Not started | `Inferno2.0/IC-Columns/IC-Columns.py` |
-| 1 — Hardware | Audio playback | ✗ Not started | Gen 1 `mpg321` or update approach |
-| 1 — Hardware | Video looping (info-beamer-pi, UDP port 4444) | ✗ Not started | `PiClasses/InfoBeamer.py` |
-| 2 — Telemetry | Sentry error tracking | ✗ Not started | `Inferno2.0` Sentry integration |
-| 2 — Telemetry | Local event logging | ✗ Not started | `PiClasses/WriteLogToDB.py` (adapt) |
-| 3 — Member system | REST backend (Node.js/Express/MySQL) | ✗ Not started | `Castle-Backend` (archived) |
-| 3 — Member system | Member lookup from RFID | ✗ Not started | `Inferno2.0/IC-Columns/IC-Columns.py` |
-| 4 — Gags | Per-gag Python scripts using layers 0-3 | ✗ Not started | `Inferno2.0` as reference |
-| 4 — Gags | UDP inter-Pi coordination | ✗ Not started | `Inferno2.0` UDP broadcast |
-| 4 — Gags | Text-to-speech (pyTTS/espeak) | ✗ Not started | `Inferno2.0` TTS implementation |
-| 5 — Choreography | Node-Red flows for gag sequencing | ✗ Not started | Design from scratch |
-| 6 — Receipt | Receipt printer integration | ✗ Aspirational | No prior implementation |
+| BrawlFight | RFID | info-beamer video | Plays fight scene clip |
+| Bridge | Timed (60s loop) | Audio only | Ambient horse sounds, no trigger |
+| DinRmClouds | RFID | DMX + audio | Dining room atmosphere |
+| Fireflies | RFID | GPIO relay × 3 | mod3 routing — each RFID deterministically routes to one of 3 firefly zones |
+| Furnace | RFID | DMX + info-beamer video | DMX gold→red color shift + furnace video |
+| LarasCandle | RFID | GPIO relay (inverted) | Candle prop — relay is active-low |
+| LivingLogo | Ambient | info-beamer video | Logo animation loop, no trigger |
+| Mill | Ambient | info-beamer video | Mill video loop, no trigger |
+| Pumpkins | RFID or SIGALRM (5 min) | 62-ch DMX + audio | Most complex Gen 1 gag: random choice between 62-channel DMX lightshow (pumpkin tree) or sequential narrated audio with DMX fade (pumpkin talk). Audio duration tracked via `mutagen`. |
+| Stables | RFID | GPIO relay × 3 + audio | Choreographed sequence: stop barn ambient → horse audio → relay sequence for nose/eyes/barn door flapping → restart ambient |
+| Trixie | RFID | GPIO + audio | Simple: GPIO on → laugh audio → GPIO off |
+
+**Shared utilities introduced:**
+- `AudioRandomizer.py` — random audio from folder with no-repeat tracking
+- `DmxPy.py` — DMX USB-RS485 driver (inline, later became a class)
+- `Lights.py` — GPIO relay abstraction (on/off, activatePins, showColor)
+- `Logging.py` — MySQL telemetry. **Note: credentials hardcoded directly in source — this is an anti-pattern. Never repeat this. Use `.env` + `.env.example`.**
+- `Movies.py` — info-beamer UDP wrapper (`localhost:4444`, `looper/set:intermission` / `looper/set:loop`)
+- `Scripts/disableRFID.sh` + `enableRFID.sh` — OS-level RFID enable/disable for debounce
 
 ---
 
-## Archived Repos
+### 2015 — Christmas + NYE (`Christmas-2015`, `NYE2015`, master branches)
 
-The following repos represent prior generations of this work. All have been archived. The code is preserved in GitHub if specific implementations need to be referenced during a revival.
+Same framework as Sleepy Hollow. New event-specific gags, plus early experiments with display output.
 
-| Repo | Generation | Key capability to reference |
+**Christmas gags:**
+| Gag | Notes |
+|---|---|
+| DiningRoom | RFID → 4-channel DMX burst + audio |
+| Furnace | RFID + DMX variant |
+| NaughtyNice | RFID → pygame display (parchment background, text fade-in, odd/even routing for naughty/nice GPIO). **Partially built, never delivered** — rendering arbitrary text to the display exceeded 2015 skill level. The concept is solid and worth revisiting. |
+| SantasWindow | **Time-of-day content switching** — 6am–12pm plays DayLoop video, otherwise NightLoop + RFID triggers intermission |
+| Snowfall | Video loop + RFID triggers intermission |
+
+**New capabilities introduced:**
+- Time-of-day logic (`datetime`) — ambient content changes based on time of day
+- `pygame` display output on connected monitor (partial — text rendering worked but full gag was not delivered)
+- info-beamer Lua scripting confirmed (`NaughtyNice/node.lua`)
+
+---
+
+### 2016 — Dia De Los Muertos (`PiClasses`, `Halloween2016` branch)
+
+First year with a shared class library. Gags import from PiClasses rather than carrying inline copies.
+
+**Gags:** AltarCandles, DaiVernon, ElfWindow, Furnace, Gumballs, HallOfFame, Heartbeat, Henning, Houdini, InfoAltar, OwlHat, Skelley-Eyes, Skulls, Spider, Trixie, SantasWindow
+
+**New class library (PiClasses root):**
+- `GPIOLib.py` — GPIO abstraction class
+- `DmxPy.py` — DMX class
+- `InfoBeamer.py` — info-beamer UDP wrapper
+- `Logging.py` — expanded MySQL logging class
+- `Timer.py` — reusable timer
+
+**New capabilities introduced:**
+- Reusable class library — gags are now short import-and-use scripts
+- Heartbeat relay effect (timed pulsing pattern)
+- Balena fleet management (OTA push, remote dashboard) — first appearance
+
+---
+
+### 2017 — Invasion (`PiClasses`, `Halloween2017` branch)
+
+The most architecturally ambitious year. Introduced inter-Pi communication as a class, stepper motors, process watchdog, and a formal gag template.
+
+**Gags:** AlienJars, AntHead, Button, Detector, ETComm, GeigerCounter, HallCore, LauraRadio, PalaceBar, Radio, RobotVoice, Stanchions, Trixie (+ carried over from 2016)
+
+**Most important new additions:**
+| File | What it does |
+|---|---|
+| `Communicator.py` + `CommunicatorClient.py` | **First formalized UDP inter-Pi communication class.** Server and client abstractions — any gag can now send/receive Pi-to-Pi messages without writing raw sockets. This is the pattern that should be built properly in the framework. |
+| `Button.py` | Button input abstraction with debounce (4KB — substantial) |
+| `StepperController.py` | **Stepper motor control** — new hardware type |
+| `GeigerCounter.py` | Geiger counter prop (GPIO-based, alien/radiation theme) |
+| `RobotVoice.py` | Robot voice synthesis |
+| `Template.py` | **First formal gag template** — the intended starting point for any new gag |
+| `monitor_process.py` + `monitor_reboot.py` | **Process watchdog** — watches the gag process, reboots Pi if it crashes |
+| `service.sh` + `launch_process.sh` | Service wrapper to launch gag + watchdog together |
+| `HallCore.py` | Central hall controller (8.6KB — most complex script of this generation) |
+| `PalaceBar.py` | Palace Bar gag (6.3KB) |
+| `Radio.py` / `LauraRadio.py` | Scripted radio/audio playback gags |
+
+**New capabilities introduced:**
+- Formalized inter-Pi UDP messaging class
+- Stepper motor hardware
+- Button input abstraction with debounce
+- **Process watchdog / auto-restart** — critical for unattended operation
+- Formal gag template
+- Robot voice synthesis
+
+---
+
+### 2018 — Murder Mansion (`PiClasses`, `Halloween2018` branch, gags in `2018/` subdirectory)
+
+Consolidated the class library further. Introduced `BaseScript.py` as the formal parent class for all gags, and a proper database abstraction so credentials are no longer in gag scripts.
+
+**Gags:** BlacklightPortraits, BloodyMace, BodyOutline, Conversation, FlowerWind, HughWelcome, IntroVideo, Invitation, KillerReveal, KnifeCircle, OuijaBase + OuijaRemote, RubyPortrait, Speakeasy + SpeakeasyWindow, Trixie, UrbanSlums, WhisperingWall, WineGlass
+
+**Key gags:**
+| Gag | Notes |
+|---|---|
+| OuijaBase + OuijaRemote | Two-Pi Ouija board gag. Master Pi runs the board logic, slave Pi controls the planchette movement via UDP. Another instance of the multi-Pi pattern. |
+| Speakeasy + SpeakeasyWindow | Prohibition speakeasy — RFID trigger + video window (3.5KB + 1.4KB) |
+| KillerReveal | Murder mystery reveal mechanic |
+| FlowerWind | Fan + flower prop combo (GPIO fan + relay) |
+| WhisperingWall | Audio-only atmospheric gag |
+
+**Class library evolution:**
+- `BaseScript.py` — formal base class for all gags (first at root level)
+- `WriteLogToDB.py` — database telemetry (fully abstracted)
+- `databaseLib.py` — database connection abstraction (credentials no longer in gag code)
+- `Logger.py` — standalone logging class
+
+---
+
+### 2019 — Cursed Temple (**CODE NOT IN VERSION CONTROL**)
+
+This year happened but the code was never committed to GitHub. No branch, no repo, no files found via code search. Gags known to have been built: Shrunken Heads, Boulder Fall, Idol Swap, Treasure Map (and possibly others).
+
+If the code still exists it would be on a Pi SD card or a local machine from that era. For practical purposes, treat the 2019 implementation as lost. Any future Cursed Temple revival starts from the framework, not recovered code.
+
+---
+
+### 2021 — Dante's Inferno (`Inferno2.0` + `Castle-Backend`, master branches)
+
+Most feature-complete year. Two repos: Pi-side Python (`Inferno2.0`) and a cloud REST backend (`Castle-Backend`). First year with personalized member experiences, Sentry crash reporting, Pi Camera, Twitter integration, and a fully delivered receipt printer.
+
+**Gags:**
+| Gag | Notes |
+|---|---|
+| IC-Columns | RFID → member lookup → TTS personalized announcement → BCD GPIO output → UDP to IC-Column-Remote slave Pi |
+| IC-Column-Remote | UDP slave: receives column commands → drives 3 GPIO LEDs (R/G/B) |
+| Inferno-Sorter | RFID → member lookup → hell level determination → TTS → UDP to PrinterTester → thermal receipt print |
+| PrinterTester | UDP receiver → CUPS thermal printer (ZJ-58 / ZJ-80). **Fully delivered**, not aspirational. Docker-managed CUPS container. |
+| InfernoEscape | Button press → RFID identity check → random escape/damnation outcome → DMX lighting → Pi Camera photo → audio from outcome pool (SalvationAudio / DamnationAudio) → TTS personalized message → **Twitter post with photo** + FTP upload to personal site |
+
+**New capabilities introduced:**
+- RFID via hardware UART serial (more reliable than USB HID)
+- Member system: RFID → REST API → member name + HellLevel (1–9, Dante's circles). Fallback: derive level from RFID first hex character.
+- Threaded RFID reader (background thread, non-blocking main loop)
+- Sentry SDK — remote crash reporting on every Pi
+- **Thermal receipt printer** — CUPS + ZJ-58/ZJ-80, UDP-triggered from another Pi. Docker container for CUPS.
+- **Pi Camera** — `picamera`, 1024×768, timestamped JPG capture
+- **Social/photo sharing** — Twitter post (`twython`) with captured photo + personalized message. **Lesson learned: Twitter API was fragile and dependency-heavy. Future implementations should not be Twitter-dependent — consider a local web gallery or a more stable API.**
+- FTP upload to personal website (`ftplib`)
+
+**Backend (`Castle-Backend`):**
+- Node.js / Express REST API
+- `GET /members/:badge_id` — RFID lookup → member record
+- `POST /activation` — logs gag activations
+- MySQL, deployed on AWS Elastic Beanstalk, Sentry integrated
+
+---
+
+## Architecture Lessons Learned
+
+These are the hard-won patterns from 6 years. Build to these, don't rediscover them.
+
+### Multi-Pi Communication
+The pattern of one Pi sending UDP commands to another was implemented at least 4 times across the years (IC-Columns→Remote, Sorter→Printer, Ouija master→remote, 2017 Communicator class). Each time it was partially abstracted or reinvented. **Build a proper inter-Pi messaging module first** — a clean `send(target_ip, message)` / `listen(port, callback)` abstraction — and all gags that need multi-Pi coordination can use it without writing sockets.
+
+### Process Watchdog
+Gags running unattended for 4+ hours will crash. The 2017 `monitor_process.py` + `monitor_reboot.py` system auto-restarts crashed scripts. **This is not optional infrastructure.** Build it into the framework from the start.
+
+### Credentials
+Gen 1 hardcoded MySQL credentials directly in `Logging.py`. Don't do this. All secrets go in `.env` files (gitignored), documented in `.env.example`. This applies to database connections, API keys, Sentry DSNs, and anything similar.
+
+### Photo Booth Pattern
+The InfernoEscape gag is a fully-featured photo booth: trigger → photo → outcome determination → audio → display/post result. This is a reusable pattern that could underpin multiple gags across different themes. **The Twitter dependency made it fragile** — API changes broke it mid-event. Future photo booth implementations should target something self-hosted (local web gallery, NAS upload) rather than a third-party social API.
+
+### RFID Reading
+USB HID (keyboard emulation) is simpler to set up but has edge cases around focus and device state. Hardware UART serial (Gen 3 approach) is more reliable for production. Use UART.
+
+### Gag Template
+`PiClasses/Halloween2017/Template.py` was the first attempt at a formal gag template. When building new gags, start from a template that imports the framework modules — don't start from scratch.
+
+### Balena → Ansible
+The fleet management capability Balena provided (OTA push, remote shell, Pi health dashboard) is fully replaced by Ansible. The tradeoff is that Ansible requires more explicit scripting vs. Balena's dashboard UI, but it's free, self-hosted, and not subject to pricing changes. The `Dockerfile.template` files in archived repos are Balena artifacts — they are not standard Dockerfiles.
+
+---
+
+## Build Order for Next Revival
+
+When the time comes to revive this, work in this order. Do not jump to gag scripts until the layers below them exist.
+
+| Step | What to build | Why first |
 |---|---|---|
-| Halloween2015 | Gen 1 | Original flat gag scripts (DMX, RFID, GPIO, audio) |
-| Christmas-2015 | Gen 1 | Christmas event variant |
-| NYE2015 | Gen 1 | NYE event variant |
-| GeneralUse | Gen 1 | Shared utility scripts |
-| PiClasses | Gen 2 | Python class library (GPIOLib, DmxPy, InfoBeamer, WriteLogToDB) |
-| InteractiveGagFramework | Gen 2 | Vision/design document — never built |
-| Inferno2.0 | Gen 3 | Most sophisticated gag scripts (RFID, TTS, UDP, Sentry, member lookup) |
-| Castle-Backend | Gen 3 | Node.js/Express/MySQL member backend (AWS EB) |
+| 1 | Verify Ansible fleet still works — reprovision a Pi | Everything else runs on the fleet |
+| 2 | Python 3 hardware modules: GPIO, DMX, RFID (UART), audio | Every gag needs these — port from archived repos |
+| 3 | Inter-Pi messaging module (UDP send/receive) | Multi-Pi gags need this; build once |
+| 4 | Process watchdog | Gags will crash; need auto-restart before going to event |
+| 5 | Sentry integration | Remote crash visibility |
+| 6 | Gag template | Starting point for each new gag |
+| 7 | Node-Red flows | Choreography layer wired to gag triggers |
+| 8 | First gag end-to-end | Validate the stack works before building more |
+| 9 | Member system (optional) | Only if personalized experiences are wanted |
+| 10 | Photo booth module (optional) | Only if camera gag is planned — use self-hosted output, not Twitter |
+| 11 | Thermal printer (optional) | Reference `Inferno2.0/PrinterTester` — CUPS + ZJ-58/ZJ-80 + Docker |
+
+---
+
+## Capability Reference
+
+Everything that has been built across all generations. Check here before assuming something needs to be built from scratch.
+
+### Hardware outputs
+| Capability | Status in Gen 4 | Reference |
+|---|---|---|
+| GPIO relay (on/off, inverted-logic) | ✗ Not ported | `PiClasses/GPIOLib.py`, `Halloween2015/Lights.py` |
+| DMX lighting (USB-RS485, up to 62+ channels) | ✗ Not ported | `PiClasses/DmxPy.py` |
+| Audio — mpg321 (blocking + background) | ✗ Not ported | All Gen 1+ gags |
+| Audio — random selection, no-repeat | ✗ Not ported | `Halloween2015/AudioRandomizer.py` |
+| Audio — sequential with duration tracking | ✗ Not ported | `Halloween2015/Pumpkins.py` (mutagen) |
+| Audio — outcome pools (e.g. salvation/damnation) | ✗ Not ported | `Inferno2.0/InfernoEscape` |
+| Video — info-beamer loop/intermission via UDP | ✗ Not ported | `PiClasses/InfoBeamer.py` |
+| TTS — espeak/pyTTS | ✗ Not ported | `Inferno2.0/InfernoEscape/TextToSpeech.py` |
+| Thermal printer — CUPS + ZJ-58/ZJ-80, UDP trigger | ✗ Not ported | `Inferno2.0/PrinterTester` |
+| Stepper motor | ✗ Not ported | `PiClasses/Halloween2017/StepperController.py` |
+| Pi Camera (photo capture) | ✗ Not ported | `Inferno2.0/InfernoEscape/InfernoEscape.py` |
+| pygame display output | ✗ Not ported | `Christmas-2015/NaughtyNice.py` (partial) |
+
+### Triggers
+| Capability | Status in Gen 4 | Reference |
+|---|---|---|
+| RFID — hardware UART serial (preferred) | ✗ Not ported | `Inferno2.0/IC-Columns/IC-Columns.py` |
+| RFID — USB HID / raw_input (legacy) | ✗ Not ported | All Gen 1–2 gags |
+| Physical button (GPIO input with debounce) | ✗ Not ported | `PiClasses/Halloween2017/Button.py` |
+| SIGALRM timed trigger (ambient shows) | ✗ Not ported | `Halloween2015/Pumpkins.py` |
+| Time-of-day content switching | ✗ Not ported | `Christmas-2015/SantasWindow.py` |
+| UDP command from another Pi | ✗ Not ported | `Inferno2.0/IC-Column-Remote/IC-Column-Remote.py` |
+
+### Framework / infrastructure
+| Capability | Status in Gen 4 | Reference |
+|---|---|---|
+| Inter-Pi UDP messaging | ✗ Not ported | `PiClasses/Halloween2017/Communicator.py` |
+| Process watchdog / auto-restart | ✗ Not ported | `PiClasses/Halloween2017/monitor_process.py` |
+| Sentry crash reporting | ✗ Not ported | `Inferno2.0` Sentry integration |
+| Member lookup (RFID → REST API → member data) | ✗ Not ported | `Castle-Backend`, `Inferno2.0/IC-Columns` |
+| Database telemetry | ✗ Not ported | `PiClasses/WriteLogToDB.py`, `databaseLib.py` |
+| Gag template | ✗ Not ported | `PiClasses/Halloween2017/Template.py` |
+
+---
+
+## Archived Repos Reference
+
+The following repos are archived on GitHub. Code is preserved and readable.
+
+| Repo | Branch | Year | Theme | What to look for |
+|---|---|---|---|---|
+| Halloween2015 | master | 2015 | Sleepy Hollow | Flat gag scripts, DMX, GPIO relay patterns, info-beamer, SIGALRM timer, 62-ch DMX (Pumpkins) |
+| Christmas-2015 | master | 2015 | Christmas | Time-of-day switching (SantasWindow), pygame display (NaughtyNice — partial) |
+| NYE2015 | master | 2015–16 | NYE | NYE variants of base gags |
+| GeneralUse | master | 2016 | Transitional | Early 2016 scripts before PiClasses was established |
+| PiClasses | Halloween2016 | 2016 | Dia De Los Muertos | First class library: GPIOLib, DmxPy, InfoBeamer, Timer |
+| PiClasses | Halloween2017 | 2017 | Invasion | Communicator UDP class, StepperController, Button, process watchdog, Template, GeigerCounter |
+| PiClasses | Halloween2018 | 2018 | Murder Mansion | OuijaBase/Remote two-Pi gag, BaseScript.py, databaseLib, WriteLogToDB |
+| InteractiveGagFramework | master | ~2016 | Vision doc | Architecture vision document — never built, but still useful framing |
+| Inferno2.0 | master | 2021 | Dante's Inferno | RFID UART, member system, TTS, Sentry, Pi Camera, photo booth, thermal printer, multi-Pi |
+| Castle-Backend | master | 2021 | Backend | Node.js/Express/MySQL member API — `/members/:badge_id`, `/activation` |
 
 ---
 
@@ -174,8 +363,8 @@ The following repos represent prior generations of this work. All have been arch
 
 ### Prerequisites
 - Docker installed on your management machine
-- SSH access to all Pis (keys configured)
-- Pis listed in `ansible/inventory/hosts`
+- SSH access to all Pis (keys configured in `~/.ssh/`)
+- Pi IPs listed in `ansible/inventory/hosts`
 
 ### Run Ansible commands
 
@@ -188,4 +377,7 @@ docker run -it --rm -v "$(pwd)/ansible:/ansible" ansible-container ansible-playb
 ```
 
 ### Node-Red
-Node-Red is configured to start via Ansible provisioning. Access the flow editor at `http://<pi-ip>:1880` after provisioning.
+Node-Red starts via Ansible provisioning. Access the flow editor at `http://<pi-ip>:1880`.
+
+### Secrets
+All secrets (database credentials, API keys, Sentry DSNs) go in `.env` files. Never commit credentials to source control — this was done in Gen 1 and is an anti-pattern to avoid.
